@@ -98,7 +98,7 @@ def map_environment_variables(args):
     
     return MODEL_API_KEY, MODEL_BASE_URL
 
-def setup_db_and_rag(args, llm):
+def setup_db_and_rag(args, llm, emb=None):
     # Initialize RAG
     if args.db == 'qdrant':
         QDRANT_API = os.getenv('QDRANT_API', None)
@@ -114,6 +114,7 @@ def setup_db_and_rag(args, llm):
             qdrant_url=QDRANT_URL,
             embeddingName=args.embedding_model,
             llm=llm,
+            emb=emb
         )
 
     elif args.db == 'mongodb':
@@ -132,6 +133,7 @@ def setup_db_and_rag(args, llm):
             dbCollection=MONGODB_COLLECTION,
             embeddingName=args.embedding_model,
             llm=llm,
+            emb=emb
         )
     else:
 
@@ -168,14 +170,15 @@ def setup_db_and_rag(args, llm):
                 print("Starting to create new collection. Please make sure you have a valid CSV file in data folder.\n")
                 print(f"Detected {len(csv_files)} csv files.\n")
                 for i in  range(len(csv_files)):              
-                    load_csv_to_chromadb(csv_path=csv_files[i], persist_dir="./chroma_db", model_name=args.embedding_model)
+                    load_csv_to_chromadb(csv_path=csv_files[i], persist_dir="./chroma_db", model_name=args.embedding_model, emb=emb)
                     print(f"Processed {i+1} files.\n")  
                 print("The data insert process is complete.")
 
         rag = RAG(
             type='chromadb',
             embeddingName=args.embedding_model,
-            llm=llm
+            llm=llm,
+            emb=emb
         )
     return rag 
 
@@ -187,6 +190,7 @@ def setup_pipeline(args):
     PRODUCT_ROUTE_NAME = 'products' 
     CHITCHAT_ROUTE_NAME = 'chitchat'
 
+    print("Load model sentenceTransformerEmbedding embedding")
     sentenceTransformerEmbedding = SentenceTransformerEmbedding(config=EmbeddingConfig(name=args.embedding_model))
     productRoute = Route(name=PRODUCT_ROUTE_NAME, samples=productsSample)
     chitchatRoute = Route(name=CHITCHAT_ROUTE_NAME, samples=chitchatSample)
@@ -209,8 +213,9 @@ def setup_pipeline(args):
     # --- End Reflection Setup --- #
 
     # Initialize RAG
-    rag = setup_db_and_rag(args, llm)
+    rag = setup_db_and_rag(args, llm, emb=sentenceTransformerEmbedding)
 
+    print("Load model Reranker")
     # Initialize ReRanker 
     reranker = Reranker(model_name=args.reranker)
 
@@ -397,4 +402,4 @@ async def openai_compatible_chat(req: OpenAIChatRequest):
 
 
 if __name__ == "__main__": 
-    uvicorn.run("serve:app", host="0.0.0.0", port=7070, reload=True)
+    uvicorn.run("serve:app", host="0.0.0.0", port=7070, reload=False)

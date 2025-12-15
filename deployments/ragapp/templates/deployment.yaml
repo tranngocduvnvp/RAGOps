@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: {{include "my-app.name" .}}
+    labels:
+        app: {{include "my-app.fullname" .}}
+spec:
+    replicas: {{.Values.replicaCount}}
+    selector:
+        matchLabels:
+            app: {{include "my-app.name" .}}
+    template:
+        metadata:
+            labels:
+                app: {{include "my-app.name" .}}
+        spec:
+            containers:
+                - name: {{ include "my-app.name" . }}
+                  image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+                  imagePullPolicy: {{ .Values.image.pullPolicy }}
+                  ports:
+                    - containerPort: {{ .Values.service.targetPort }}
+                  resources:
+                    requests:
+                      cpu: {{ .Values.resources.requests.cpu }}
+                      memory: {{ .Values.resources.requests.memory }}
+                    limits:
+                      cpu: {{ .Values.resources.limits.cpu }}
+                      memory: {{ .Values.resources.limits.memory }}
+                  env:
+                    - name: GEMINI_API_KEY
+                      valueFrom:
+                        secretKeyRef:
+                          name: ragapp-secret
+                          key: GEMINI_API_KEY
+                            

@@ -19,6 +19,7 @@ class RAG():
             dbName: Optional[str] = None,
             dbCollection: Optional[str] = None,
             embeddingName: str ='Alibaba-NLP/gte-multilingual-base',
+            emb=None
         ):
         self.type = type
         if self.type == 'mongodb':
@@ -40,10 +41,12 @@ class RAG():
             if self._collection_exists:
                 self.chromadb_collection = self.client.get_collection(name=self.chromadb_collection_name)
 
-
-        self.embedding_model = SentenceTransformerEmbedding(
-            EmbeddingConfig(name=embeddingName)
-        )
+        if emb == None:
+            self.embedding_model = SentenceTransformerEmbedding(
+                EmbeddingConfig(name=embeddingName)
+            )
+        else:
+            self.embedding_model = emb
         self.llm = llm
 
     def get_embedding(self, text):

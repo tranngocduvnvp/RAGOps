@@ -6,7 +6,7 @@ class SentenceTransformerEmbedding(BaseEmbedding):
     def __init__(self, config: EmbeddingConfig):
         super().__init__(config.name)
         self.config = config
-        self.embedding_model = SentenceTransformer(self.config.name, trust_remote_code=True, device="cpu")
+        self.embedding_model = SentenceTransformer(self.config.name, trust_remote_code=True, device="cpu", cache_folder="./checkpoint_model")
 
     def encode(self, text: str):
         return self.embedding_model.encode(text)

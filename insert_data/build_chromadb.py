@@ -26,7 +26,7 @@ def csv_exists(file_name: str) -> bool:
     return os.path.isfile(file_name)
 
 
-def load_csv_to_chromadb(csv_path: str, persist_dir: str = "./chroma_db", model_name: str = "Alibaba-NLP/gte-multilingual-base"):
+def load_csv_to_chromadb(csv_path: str, persist_dir: str = "./chroma_db", model_name: str = "Alibaba-NLP/gte-multilingual-base", emb=None):
     # Load CSV
     if csv_exists(file_name=csv_path):
         df = pd.read_csv(csv_path)
@@ -38,8 +38,12 @@ def load_csv_to_chromadb(csv_path: str, persist_dir: str = "./chroma_db", model_
 
     # df['combined_information'] = df.apply(lambda row: ', '.join(f"{col}: {row[col]}" for col in df.columns), axis=1)
     df['combined_information'] = df["text"] + ' ' + df["title"]
-    # Load sentence embedding model
-    model = SentenceTransformer(model_name, trust_remote_code=True)
+    if emb ==None:
+        # Load sentence embedding model
+        print(f"Load {model_name} to create database")
+        model = SentenceTransformer(model_name, trust_remote_code=True, cache_folder="./checkpoint_model")
+    else:
+        model = emb
 
     # Generate embeddings from 'combined_information' column
     df['embedding'] = df['combined_information'].apply(lambda x: model.encode(x).tolist())

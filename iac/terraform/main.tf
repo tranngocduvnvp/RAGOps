@@ -7,7 +7,7 @@ terraform {
       version = "4.80.0" // Provider version
     }
   }
-  required_version = "1.14.0" // Terraform version
+  required_version = "1.14.1" // Terraform version
 }
 
 // The library with methods for creating and
@@ -27,11 +27,11 @@ resource "google_container_cluster" "primary" {
   enable_autopilot = false
 
   // Specify the initial number of nodes
-  initial_node_count = 3
+  initial_node_count = 2
 
   // Node configuration
   node_config {
-    machine_type = "e2-standard-2" // 2 vCPUs, 8 GB RAM
+    machine_type = "e2-highmem-2" // 2 vCPUs, 16 GB RAM
     disk_size_gb = 30
   }
 }
