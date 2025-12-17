@@ -1,0 +1,76 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: main-rules
+  namespace: monitoring
+  labels:
+    app: kube-prometheus-stack
+    release: monitoring
+spec:
+  groups:
+  - name: main.rules
+    rules:
+
+    # =====================
+    # CPU HIGH
+    # =====================
+    - alert: HostHighCpuLoad
+      expr: |
+        100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[2m])) * 100) > 80
+      for: 2m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Host CPU load high"
+        description: |
+          CPU load on host is over 80%
+          Value = {{ printf "%.2f" $value }}%
+          Instance = {{ $labels.instance }}
+
+    # =====================
+    # POD CRASH LOOP
+    # =====================
+    - alert: KubernetesPodCrashLooping
+      expr: |
+        increase(kube_pod_container_status_restarts_total[5m]) > 3
+      for: 2m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Kubernetes pod crash looping"
+        description: |
+          Pod {{ $labels.namespace }}/{{ $labels.pod }} is crash looping
+          Restarts in last 5m = {{ $value }}
+
+    # =====================
+    # MEMORY LOW
+    # =====================
+    - alert: MemoryRunningOut
+      expr: |
+        (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 < 10
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Memory running out on node"
+        description: |
+          Available memory is below 10%
+          Remaining = {{ printf "%.2f" $value }}%
+          Instance = {{ $labels.instance }}
+
+    # =====================
+    # PODS USING HIGH MEMORY
+    # =====================
+    - alert: PodsUsingHighMemory
+      expr: |
+        sum(kube_pod_container_resource_requests_memory_bytes)
+        /
+        sum(node_memory_MemTotal_bytes) * 100 > 80
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Pods using high memory"
+        description: |
+          Pods are requesting more than 80% of total node memory
+          Value = {{ printf "%.2f" $value }}%

@@ -44,3 +44,10 @@ nano /etc/hosts
 http://chat.example.com/
 ```
 
+
+# Monitoring
+generate app mail password
+```
+k create secret generic gmail-auth --from-literal=password='mail-app' -n monitoring
+```
+
