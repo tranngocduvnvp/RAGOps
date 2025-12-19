@@ -14,10 +14,15 @@ class OnLineLLMs:
         if self.model_name == "gemini" and api_key:
             # genai.configure(api_key=api_key)
             # self.model = genai.GenerativeModel(model_name=model_version)
+            # self.client = openai.OpenAI(
+            #                     api_key=api_key,
+            #                     base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+            #                 )
             self.client = openai.OpenAI(
-                                api_key=api_key,
-                                base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+                                api_key='EMPTY',
+                                base_url="http://localhost:8000/v1"
                             )
+
         elif self.model_name == "openai" and api_key:
             self.client = openai.OpenAI(api_key=api_key)
         elif self.model_name == "together" and api_key:
@@ -49,7 +54,7 @@ class OnLineLLMs:
                 model=self.model_version,
                 messages=prompt
             )
-            return response.choices[0].message.content
+            return self.remove_think_blocks(response.choices[0].message.content)
 
         elif self.model_name == "openai":
             response = self.client.chat.completions.create(

@@ -9,6 +9,8 @@ from embeddings import SentenceTransformerEmbedding, EmbeddingConfig
 from semantic_router import SemanticRouter, Route
 from semantic_router.samples import productsSample, chitchatSample
 # import google.generativeai as genai
+from ultis.prompt_caching import PromptCache
+from ultis.memory import MemoryModule
 import openai
 from reflection import Reflection
 from re_rank import Reranker
@@ -218,8 +220,16 @@ def setup_pipeline(args):
     print("Load model Reranker")
     # Initialize ReRanker 
     reranker = Reranker(model_name=args.reranker)
+    memorymodule = MemoryModule(sentenceTransformerEmbedding, reranker, args.faiss_base_path, max_short_term_messages=args.max_short_term_messages)
 
-    return semanticRouter, llm, reflection, rag, reranker
+    cachemodule = PromptCache(
+        embedding_instance=sentenceTransformerEmbedding,
+        expire_seconds=args.expire_seconds,
+        similarity_threshold=args.similarity_threshold
+    )
+
+
+    return semanticRouter, llm, reflection, rag, reranker, memorymodule, cachemodule
 
 app_state: Dict[str, Any] = {}
 
@@ -228,12 +238,14 @@ async def lifespan(app: FastAPI):
     print("Starting RAG Server ....")
     args = load_config("config.yaml")
     print("Config Loaded")
-    semanticRouter, llm, reflection, rag, reranker = setup_pipeline(args)
+    semanticRouter, llm, reflection, rag, reranker, memorymodule, cachemodule = setup_pipeline(args)
     app_state["semanticRouter"] = semanticRouter
     app_state["llm"] = llm
     app_state["reflection"] = reflection
     app_state["rag"] = rag
     app_state["reranker"] = reranker
+    app_state["memorymodule"] = memorymodule
+    app_state["cachemodule"] = cachemodule
 
     print("Load Pipeline successfully!")
     yield
@@ -333,29 +345,61 @@ async def openai_compatible_chat(req: OpenAIChatRequest):
         reflection = app_state.get("reflection")
         rag = app_state.get("rag")
         reranker = app_state.get("reranker")
+        memorymodule = app_state.get("memorymodule")
+        cachemodule = app_state.get("cachemodule")
+
+        # Build OpenAI-like response
+        model_name = req.model or getattr(llm, "model_name", "unknown-model")
+        # usage estimation left as zeros currently. If your LLM returns token usage, plug it here.
+        usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+
+        iduser = "001"
+        passages = None
+        ranked_passages = None
 
         if semanticRouter is None or llm is None:
             raise HTTPException(status_code=500, detail="Server pipeline not initialized")
 
         messages = req.messages or []
         user_content = choose_message_content(messages)
+        origin_query = user_content
+
+        response, is_exact, sim = cachemodule.get_cached_response(iduser, user_content)
+        if response:
+            openai_resp = build_openai_response(model_name=model_name, assistant_content=response, usage=usage)
+            # additionally, include our internal route and passages in top-level field "internal" for debugging (optional)
+            openai_resp["internal"] = {
+                "route": "cache load",
+                "passages": passages,
+                "ranked_passages": ranked_passages
+            }
+            return openai_resp
 
         # Build data for internal pipeline (keeps compatibility with original code)
         data = {"role": "user", "content": user_content}
 
+        stm = memorymodule.get_short_term_history(iduser)
+        ltm = memorymodule.search(iduser, query=user_content)
+        print("start rewrite query") 
+        reflected_query = reflection(data, stm, ltm)
+        user_content = reflected_query
+        
+
         # Decide route via semantic router
+        print("start semanticRouter") 
         guidedRoute = semanticRouter.guide(user_content)[1]
 
         PRODUCT_ROUTE_NAME = 'products'
         CHITCHAT_ROUTE_NAME = 'chitchat'
 
-        passages = None
-        ranked_passages = None
+        
 
         if guidedRoute == PRODUCT_ROUTE_NAME:
+            print("using query RAG")
             # RAG path
             passages = [passage for passage in rag.vector_search(user_content)]
             # Re-rank
+            print("using reranking")
             scores, ranked_passages = reranker(user_content, passages)
 
             # Build source information safely (fix nested quoting)
@@ -375,15 +419,17 @@ async def openai_compatible_chat(req: OpenAIChatRequest):
             )
             prompt_messages = [{"role": "user", "content": combined_information}]
             # Use RAG.generate_content (keeps original behaviour)
+            print("generate answer")
             assistant_response = rag.generate_content(prompt_messages)
+            print("generate content succesfully")
+            memorymodule.ingress(iduser, prompt_messages + [{"role": "assistant", "content": assistant_response}])
         else:
             # LLM path (chitchat or default)
             assistant_response = llm.generate_content([data])
+            memorymodule.ingress("001", [data] + [{"role": "assistant", "content": assistant_response}])
 
-        # Build OpenAI-like response
-        model_name = req.model or getattr(llm, "model_name", "unknown-model")
-        # usage estimation left as zeros currently. If your LLM returns token usage, plug it here.
-        usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        cachemodule.cache_response(iduser, origin_query, assistant_response)
+        
 
         openai_resp = build_openai_response(model_name=model_name, assistant_content=assistant_response, usage=usage)
         # additionally, include our internal route and passages in top-level field "internal" for debugging (optional)
@@ -402,4 +448,4 @@ async def openai_compatible_chat(req: OpenAIChatRequest):
 
 
 if __name__ == "__main__": 
-    uvicorn.run("serve:app", host="0.0.0.0", port=7070, reload=False)
+    uvicorn.run("serve:app", host="0.0.0.0", port=7070, reload=True)

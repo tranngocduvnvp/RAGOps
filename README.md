@@ -19,7 +19,7 @@ curl -X POST http://localhost:8000/v1/chat/completions \
       },
       {
         "role": "user",
-        "content": "Tôi muốn mua laptop cho lập trình Python."
+        "content": "hoa M207 có giá bao nhiêu."
       }
     ],
     "max_tokens": 512,
