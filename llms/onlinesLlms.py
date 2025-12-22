@@ -49,10 +49,31 @@ class OnLineLLMs:
         """
         if self.model_name == "gemini":
             response = self.client.chat.completions.create(
-                model=self.model_version,
-                messages=prompt
+            model=self.model_version,  # ví dụ: "gpt-4o" hoặc "gpt-4o-mini"
+            messages=prompt
             )
-            return self.remove_think_blocks(response.choices[0].message.content)
+
+            # Lấy content sạch (như cũ)
+            assistant_content = self.remove_think_blocks(response.choices[0].message.content)
+
+            # Lấy usage từ response (luôn có nếu không stream)
+            if response.usage:
+                prompt_tokens = response.usage.prompt_tokens
+                completion_tokens = response.usage.completion_tokens
+                total_tokens = response.usage.total_tokens
+
+                # Nếu có cache (gpt-4o mới hơn có thể có)
+                cache_read_tokens = getattr(response.usage, "prompt_tokens_details", {}).get("cached_tokens", 0) if hasattr(response.usage, "prompt_tokens_details") else 0
+            else:
+                # Hiếm khi None, nhưng phòng trường hợp
+                prompt_tokens = completion_tokens = total_tokens = cache_read_tokens = None
+
+            return assistant_content, {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+                "cache_read_tokens": cache_read_tokens
+            }
 
         elif self.model_name == "openai":
             response = self.client.chat.completions.create(

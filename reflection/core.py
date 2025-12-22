@@ -82,15 +82,19 @@ class Reflection():
         
         
         if len(stm)==0:
-            return query["content"]
+            return query["content"], {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0
+        }
         else:
             # return query["content"]
             prompt_rewrite = self.build_query_rewrite_prompt( query, stm, ltm)
 
-        print("start llm to generate rewrite")
-        completion = self.llm.generate_content([{"role":"user", "content": prompt_rewrite}])
-        print("completion:", completion)
-    
-        return completion
+        completion, usage_dict = self.llm.generate_content([{"role":"user", "content": prompt_rewrite}])
+
+        print(completion)
+        print(usage_dict)
+        return completion, usage_dict
 
 

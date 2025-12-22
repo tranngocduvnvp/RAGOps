@@ -5,6 +5,7 @@ import numpy as np
 class Reranker():
     def __init__(self, model_name: str = "Alibaba-NLP/gte-multilingual-reranker-base"):
         self.reranker = CrossEncoder(model_name, trust_remote_code=True, device="cpu", cache_folder="./checkpoint_model")
+        self.reranker_name = model_name
 
     def __call__(self, query: str, passages: list):
         # Combine query and passages into pairs

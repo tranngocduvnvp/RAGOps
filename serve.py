@@ -38,6 +38,10 @@ from ragas.metrics import (
     answer_correctness,
 )
 from datasets import Dataset  # From Hugging Face datasets
+import pandas as pd
+import ast
+from pandas import isna
+import numpy as np
 
 # Load environment variables from .env file
 load_dotenv()
@@ -66,9 +70,10 @@ tracer = trace.get_tracer(__name__)
 
 # Set environment variables for API keys (add Langfuse keys)
 # os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")  # If using OpenAI for Ragas/LLM
-os.environ["LANGFUSE_SECRET_KEY"] = "sk-lf-ff3cd06f-79f7-456e-8b7a-94aa51caba5c"
-os.environ["LANGFUSE_PUBLIC_KEY"] = "pk-lf-e0bab1a6-cc75-4f96-a07f-623d95e56567"
+os.environ["LANGFUSE_SECRET_KEY"] = "sk-lf-d2389b4b-7a68-42b8-b1db-5fa0da5cccb3"
+os.environ["LANGFUSE_PUBLIC_KEY"] = "pk-lf-6c32632d-ede0-4a10-938f-dd7b02511462"
 os.environ["LANGFUSE_HOST"] = "https://cloud.langfuse.com"  # Or self-hosted if applicable
+os.environ["OPENAI_API_KEY"] = "AIzaSyAoJU8okYfRigs2q8B_slIkFTmpe8-BGMs"
 
 gemini_llm = ChatOpenAI(
     model="gemini-2.0-flash-lite",
@@ -250,8 +255,18 @@ evaluation_samples = {
 
 # New endpoint to trigger Ragas evaluation (for manual or periodic evaluation)
 @app.get("/evaluate")
-async def run_evaluation():
-    global evaluation_samples
+def run_evaluation():
+    # global evaluation_samples
+    df = pd.read_csv('evaluation_samples.csv')
+    df["contexts"] = df["contexts"].apply(ast.literal_eval)
+
+    # Chuyển DataFrame về dict đúng format ban đầu
+    evaluation_samples = {
+        "question": df["question"].tolist(),
+        "answer": df["answer"].tolist(),
+        "contexts": df["contexts"].tolist(),
+    }
+
     if not evaluation_samples['question']:
         return JSONResponse(content={"message": "No samples collected yet."})
 
@@ -264,33 +279,35 @@ async def run_evaluation():
         metrics=[
             faithfulness,         # For generation quality
             answer_relevancy,     # For generation relevancy
-            context_precision,    # For retrieval/rerank precision
+            # context_precision,    # For retrieval/rerank precision
             # context_recall,       # For retrieval recall
             # answer_correctness    # Overall correctness
         ],
         llm=gemini_llm
     )
 
-    # Clear samples after evaluation (optional)
-    evaluation_samples = {'question': [], 'answer': [], 'contexts': [], 'ground_truth': []}
+    # # Clear samples after evaluation (optional)
+    # evaluation_samples = {'question': [], 'answer': [], 'contexts': [], 'ground_truth': []}
+    print(result)
+    # Chuyển result (là Ragas Result object) sang dict, xử lý NaN
+    result_df = result.to_pandas()  # Chuyển thành DataFrame
 
-    return JSONResponse(content={"ragas_results": result})
+    # Thay thế NaN bằng None (JSON sẽ hiểu là null)
+    result_dict = result_df.replace({np.nan: None}).to_dict(orient="records")
 
-# Wrap phases with Langfuse for monitoring
-@observe(name="Query Phase")
-def monitored_retrieve(rag, query):
-    passages = [passage for passage in rag.vector_search(query)]
-    return passages
+    # Hoặc nếu muốn tổng hợp scores trung bình
+    scores = result.scores  # Đây là dict với key là tên metric
+    print(scores)
+    scores_clean = {k: float(v) if not isna(v) else None for k, v in scores.items()}
 
-@observe(name="Rerank Phase", capture_input=False)
-def monitored_rerank(reranker, query, passages):
-    scores, ranked_passages = reranker(query, passages)
-    return scores, ranked_passages
+    return {
+        "ragas_results": {
+            "individual_scores": result_dict,  # Chi tiết từng sample
+            "average_scores": scores_clean,     # Trung bình các metric
+            "total_samples": len(dataset)
+        }
+    }
 
-@observe(name="Generation Phase", as_type="generation")
-def monitored_generate(rag, prompt_messages):
-    response = rag.generate_content(prompt_messages)
-    return response
 
 
 @app.post("/v1/chat/completions")
@@ -312,6 +329,9 @@ async def openai_compatible_chat(req: OpenAIChatRequest):
 
         # Build OpenAI-like response
         model_name = req.model or getattr(llm, "model_name", "unknown-model")
+        reranker_name = getattr(reranker, "reranker_name", "unknown-reranker")
+        logger_app.info(f"Using model: {model_name}")
+
         # usage estimation left as zeros currently. If your LLM returns token usage, plug it here.
         usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
@@ -322,71 +342,81 @@ async def openai_compatible_chat(req: OpenAIChatRequest):
         if semanticRouter is None or llm is None:
             raise HTTPException(status_code=500, detail="Server pipeline not initialized")
 
-        with tracer.start_as_current_span("chat request") as processors:
-            with tracer.start_as_current_span("Get Cache Respone ",\
-                                          links=[trace.Link(processors.get_span_context())]):
-                
+        with langfuse.start_as_current_observation(
+        as_type="span",
+        name="chat request",
+        input={"messages": req.messages}  # hoặc bất kỳ input nào bạn muốn hiển thị ở trace level
+    ) as root_span:
+            with langfuse.start_as_current_observation(as_type="span", name="Get Cache Response") as cache_span:
                 messages = req.messages or []
                 user_content = choose_message_content(messages)
                 origin_query = user_content
 
-
                 response, is_exact, sim = cachemodule.get_cached_response(iduser, user_content)
                 if response:
                     logger_app.info("Using cache")
+                    cache_span.update(
+                        input={"query": user_content},
+                        output={"response": response, "is_exact": is_exact, "similarity": sim},
+                        metadata={"route": "cache_hit"}
+                    )
                     openai_resp = build_openai_response(model_name=model_name, assistant_content=response, usage=usage)
-                    # additionally, include our internal route and passages in top-level field "internal" for debugging (optional)
                     openai_resp["internal"] = {
                         "route": "cache load",
                         "passages": passages,
                         "ranked_passages": ranked_passages
                     }
+                    # Set output cho trace khi dùng cache
+                    root_span.update(output={"assistant_message": response})
                     return openai_resp
 
-            with tracer.start_as_current_span("Get memory history ",\
-                                          links=[trace.Link(processors.get_span_context())]):
-                # Build data for internal pipeline (keeps compatibility with original code)
+            with langfuse.start_as_current_observation(as_type="span", name="Get memory history") as memory_span:
                 data = {"role": "user", "content": user_content}
-
                 stm = memorymodule.get_short_term_history(iduser)
                 ltm = memorymodule.search(iduser, query=user_content)
-        
-            with tracer.start_as_current_span("Rewrite query",\
-                                          links=[trace.Link(processors.get_span_context())]):
-                logger_app.info("start rewrite query") 
-                reflected_query = reflection(data, stm, ltm)
+                memory_span.update(
+                    input={"user_id": iduser, "query": user_content},
+                    output={"short_term": stm, "long_term": ltm}
+                )
+
+            with langfuse.start_as_current_observation(as_type="generation", model=model_name, name="Rewrite query") as rewrite_span:
+                logger_app.info("start rewrite query")
+                (reflected_query, usage_dict_rewrite) = reflection(data, stm, ltm)
                 user_content = reflected_query
-            
-        
-            with tracer.start_as_current_span("Semantic Router",\
-                                          links=[trace.Link(processors.get_span_context())]):
-                # Decide route via semantic router
-                logger_app.info("start semanticRouter") 
+                rewrite_span.update(
+                    input={"original": origin_query},
+                    output={"rewritten": reflected_query},
+                    usage_details=usage_dict_rewrite,
+                    cost_details={
+                        "input": 0.00000030,
+                        "cache_read_input_tokens": 0.00000003,
+                        "output": 0.00000250
+                    }
+                )
+
+            with langfuse.start_as_current_observation(as_type="span", name="Semantic Router") as router_span:
+                logger_app.info("start semanticRouter")
                 guidedRoute = semanticRouter.guide(user_content)[1]
+                router_span.update(
+                    input={"query": user_content},
+                    output={"route": guidedRoute}
+                )
 
                 PRODUCT_ROUTE_NAME = 'products'
                 CHITCHAT_ROUTE_NAME = 'chitchat'
 
-        
-
             if guidedRoute == PRODUCT_ROUTE_NAME:
-                with tracer.start_as_current_span("RAG pipeline ",\
-                                          links=[trace.Link(processors.get_span_context())]):
-                    
+                with langfuse.start_as_current_observation(as_type="span", name="RAG pipeline") as rag_span:
                     logger_app.info("using query RAG")
-                    # RAG path
-                    # passages = [passage for passage in rag.vector_search(user_content)]
-                    # Monitored retrieve
-                    passages = monitored_retrieve(rag, user_content)
-                    # Re-rank
-                    logger_app.info("using reranking")
-                    scores, ranked_passages = monitored_rerank(reranker, user_content, passages)
-                    # scores, ranked_passages = reranker(user_content, passages)
+                    passages = [passage for passage in rag.vector_search(user_content)]
 
-                    # Build source information safely (fix nested quoting)
+                    with langfuse.start_as_current_observation(as_type="span", name="Reranking") as rarank_span:
+                        logger_app.info("using reranking")
+                        scores, ranked_passages = reranker(user_content, passages)
+                        rarank_span.update(input=passages, output=ranked_passages, metadata={"scores": scores, "reranker_name":reranker_name, "route": "rerank"})
+
                     source_information = ""
                     for i, p in enumerate(ranked_passages):
-                        # defensive extraction - some keys may differ depending on your RAG metadata shape
                         combined_info = p.get("combined_information", str(p.get("content", "")))
                         metadata = p.get("metatdata", p.get("metadata", {}))
                         price = metadata.get("product_price", metadata.get("price", "N/A"))
@@ -399,35 +429,75 @@ async def openai_compatible_chat(req: OpenAIChatRequest):
                         "Câu trả lời ngắn gọn không được bịa đặt ngoài các thông tin được cung cấp."
                     )
                     prompt_messages = [{"role": "user", "content": combined_information}]
-                    # Use RAG.generate_content (keeps original behaviour)
-                    logger_app.info("generate answer")
-                    assistant_response = monitored_generate(rag, prompt_messages)
-                    # assistant_response = rag.generate_content(prompt_messages)
-                    logger_app.info("generate content succesfully")
-                    memorymodule.ingress(iduser, prompt_messages + [{"role": "assistant", "content": assistant_response}])
+                    prompt_messages_memory = [{"role": "user", "content": user_content}]
 
-                    # Collect for Ragas evaluation (add ground_truth manually or via feedback loop in production)
+                    # Generation riêng cho LLM call trong RAG (giả sử rag.generate_content trả về response + usage nếu có)
+                    with langfuse.start_as_current_observation(
+                        as_type="generation",
+                        name="RAG LLM Generation",
+                        model=model_name,  # thay bằng model thực tế nếu khác
+                        input=prompt_messages
+                    ) as gen:
+                        logger_app.info("generate answer")
+                        (assistant_response, usage_dict_answer) = rag.generate_content(prompt_messages)
+                        logger_app.info("generate content succesfully")
+
+                        gen.update(
+                            output=assistant_response,
+                            usage_details=usage_dict_answer,
+                            metadata={"route": "rag"},
+                            cost_details={
+                                "input": 0.00000030,
+                                "cache_read_input_tokens": 0.00000003,
+                                "output": 0.00000250
+                            }
+                        )
+
+                    memorymodule.ingress(iduser, prompt_messages_memory + [{"role": "assistant", "content": assistant_response}])
+
                     evaluation_samples['question'].append(user_content)
                     evaluation_samples['answer'].append(assistant_response)
-                    evaluation_samples['contexts'].append([source_information])  # Contexts as list of strings
-                    # evaluation_samples['ground_truth'].append("Ground truth here")  # Replace with actual ground truth
+                    evaluation_samples['contexts'].append([source_information])
+                    df = pd.DataFrame(evaluation_samples)
+                    df.to_csv('evaluation_samples.csv', index=False)
+
+                    # Thêm metadata cho span RAG nếu cần
+                    rag_span.update(metadata={"retrieved_passages": len(passages), "reranked": len(ranked_passages)})
+
             else:
-                with tracer.start_as_current_span("Chatchit pipeline ",\
-                                          links=[trace.Link(processors.get_span_context())]):
-                    # LLM path (chitchat or default)
-                    assistant_response = llm.generate_content([data])
+                with langfuse.start_as_current_observation(as_type="span", name="Chatchit pipeline") as chitchat_span:
+                    # Generation riêng cho chitchat LLM call
+                    with langfuse.start_as_current_observation(
+                        as_type="generation",
+                        name="Chitchat LLM Generation",
+                        model=model_name,
+                        input=[data]
+                    ) as gen:
+                        (assistant_response, usage_dict_chitchat) = llm.generate_content([data])
+
+                        # Tương tự, update usage nếu có
+                        gen.update(output=assistant_response,\
+                                    usage_details=usage_dict_chitchat,\
+                                    cost_details={
+                                        "input": 0.00000030,
+                                        "cache_read_input_tokens": 0.00000003,
+                                        "output": 0.00000250
+                                    },
+                                    metadata={"route": "chitchat"})
+
                     memorymodule.ingress("001", [data] + [{"role": "assistant", "content": assistant_response}])
 
             cachemodule.cache_response(iduser, origin_query, assistant_response)
-            
 
             openai_resp = build_openai_response(model_name=model_name, assistant_content=assistant_response, usage=usage)
-            # additionally, include our internal route and passages in top-level field "internal" for debugging (optional)
             openai_resp["internal"] = {
                 "route": guidedRoute,
-                "passages": passages,
-                "ranked_passages": ranked_passages
+                "passages": passages if guidedRoute == PRODUCT_ROUTE_NAME else None,
+                "ranked_passages": ranked_passages if guidedRoute == PRODUCT_ROUTE_NAME else None
             }
+
+            # Set output cho toàn bộ trace (assistant response cuối cùng)
+            root_span.update(output={"assistant_message": assistant_response})
 
             return openai_resp
 
