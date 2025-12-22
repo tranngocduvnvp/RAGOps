@@ -21,3 +21,11 @@ gdown==5.2.0
 onnxruntime==1.22.1
 accelerate>=0.26.0
 transformers
+redis
+loguru
+opentelemetry-api
+opentelemetry-sdk
+opentelemetry-instrumentation-fastapi
+opentelemetry-exporter-otlp-proto-grpc
+opentelemetry-exporter-jaeger
+opentelemetry-exporter-prometheus

@@ -1,0 +1,31 @@
+# tempo-values.yaml - Monolithic mode với GCS + Workload Identity
+
+tempo:
+  searchEnabled: true  # Enable search traces trong Grafana
+  metricsGenerator:
+    enabled: false     # Disable nếu không cần
+
+  storage:
+    trace:
+      backend: gcs       # Backend GCS
+      gcs:
+        bucket_name: tempo-traces-bucket-grafana  # Thay bằng tên bucket GCS của bạn
+        # Không cần service_account_key hoặc hmac_keys vì dùng Workload Identity
+        # prefix: optional-prefix/   # Optional: nếu muốn nest objects trong bucket shared
+        # chunk_buffer_size: 10485760  # Optional: buffer size (default 10MB)
+
+# Để enable Workload Identity cho Tempo Pod
+serviceAccount:
+  create: true
+  name: tempo
+  annotations:
+    iam.gke.io/gcp-service-account: tempo-sa@ragops-481207.iam.gserviceaccount.com  # Thay bằng GSA email
+
+# Optional: Tăng resources nếu cần
+resources:
+  limits:
+    cpu: 500m
+    memory: 1Gi
+  requests:
+    cpu: 100m
+    memory: 512Mi

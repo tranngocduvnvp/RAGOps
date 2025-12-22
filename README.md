@@ -4,6 +4,15 @@ make secret
 kubectl create secret generic ragapp-secret \
   --from-literal=GEMINI_API_KEY=your_gemini_api_key_here
 
+#config redis
+
+PASSWORD=$(kubectl get secret redis -n redis -o jsonpath='{.data.redis-password}' | base64 -d)
+
+# Tạo secret mới trong namespace serving
+kubectl create secret generic redis-password-external \
+  --namespace serving \
+  --from-literal=redis-password=$PASSWORD
+
 helm upgrade --install ./deployments/ragapp 
 ```
 test api service
@@ -51,3 +60,23 @@ generate app mail password
 k create secret generic gmail-auth --from-literal=password='mail-app' -n monitoring
 ```
 
+# Logging
+```
+k get secret -n logging
+
+k get secret elasticsearch-master-credentials -n logging -o jsonpath='{.data.password}' | base64 -d
+
+```
+
+# Tracing
+tạo GSA
+```
+gcloud iam service-accounts create tempo-sa
+
+gsutil iam ch serviceAccount:tempo-sa@ragops-481207.iam.gserviceaccount.com:objectAdmin gs://tempo-traces-bucket-grafana
+```
+
+# Tao skaffold 
+```
+skaffold dev --verbosity=info
+```

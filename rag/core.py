@@ -36,7 +36,7 @@ class RAG():
                             )
         else:
             self.type = 'chromadb'
-            self.client = chromadb.PersistentClient(path="./chroma_db")
+            self.client = chromadb.PersistentClient(path="./checkpoint_model/chroma_db")
             self.chromadb_collection_name = embeddingName.split('/')[-1] 
             if self._collection_exists:
                 self.chromadb_collection = self.client.get_collection(name=self.chromadb_collection_name)

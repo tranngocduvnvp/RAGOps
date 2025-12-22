@@ -1,7 +1,7 @@
 mode: "online"              # online | offline
 model_name: "gemini"
 model_engine: "huggingface"
-model_version: "Qwen/Qwen2.5-0.5B-Instruct"
+model_version: "gemini-2.5-flash"
 
 db: "chromadb"               # qdrant | mongodb | chromadb
 embedding_model: "Alibaba-NLP/gte-multilingual-base"

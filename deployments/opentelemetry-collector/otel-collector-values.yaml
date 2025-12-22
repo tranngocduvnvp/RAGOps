@@ -1,0 +1,33 @@
+mode: deployment  # Hoặc daemonset nếu cần per-node
+
+image:
+  repository: otel/opentelemetry-collector-k8s  # Khuyến nghị cho Kubernetes distro (nhẹ hơn, phù hợp monitoring K8s)
+  # Nếu bạn cần nhiều extension/contrib (ví dụ: thêm receiver/exporter đặc biệt), dùng:
+  # repository: otel/opentelemetry-collector-contrib
+  tag: ""  # Để trống để dùng tag mặc định theo chart (thường là latest stable), hoặc chỉ định cụ thể như "0.114.0"
+
+
+config:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317  # Port nhận từ app
+        http:
+          endpoint: 0.0.0.0:4318
+
+  processors:
+    batch: {}  # Batch traces trước khi export
+
+  exporters:
+    otlp/tempo:
+      endpoint: temp-tempo.monitoring.svc.cluster.local:4317  # Forward đến Tempo
+      tls:
+        insecure: true  # Dev mode
+
+  service:
+    pipelines:
+      traces:
+        receivers: [otlp]
+        processors: [batch]
+        exporters: [otlp/tempo]

@@ -26,7 +26,7 @@ def csv_exists(file_name: str) -> bool:
     return os.path.isfile(file_name)
 
 
-def load_csv_to_chromadb(csv_path: str, persist_dir: str = "./chroma_db", model_name: str = "Alibaba-NLP/gte-multilingual-base", emb=None):
+def load_csv_to_chromadb(csv_path: str, persist_dir: str = "./checkpoint_model/chroma_db", model_name: str = "Alibaba-NLP/gte-multilingual-base", emb=None):
     # Load CSV
     if csv_exists(file_name=csv_path):
         df = pd.read_csv(csv_path)

@@ -16,6 +16,7 @@ COPY requirements.txt .
 # Cài đặt các thư viện trong requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
+RUN pip install langfuse
 # Sao chép toàn bộ mã nguồn vào container
 COPY . .
 

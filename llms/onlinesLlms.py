@@ -12,16 +12,14 @@ class OnLineLLMs:
         self.model_version = model_version
 
         if self.model_name == "gemini" and api_key:
-            # genai.configure(api_key=api_key)
-            # self.model = genai.GenerativeModel(model_name=model_version)
-            # self.client = openai.OpenAI(
-            #                     api_key=api_key,
-            #                     base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
-            #                 )
             self.client = openai.OpenAI(
-                                api_key='EMPTY',
-                                base_url="http://localhost:8000/v1"
+                                api_key=api_key,
+                                base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
                             )
+            # self.client = openai.OpenAI(
+            #                     api_key='EMPTY',
+            #                     base_url="http://localhost:8000/v1"
+            #                 )
 
         elif self.model_name == "openai" and api_key:
             self.client = openai.OpenAI(api_key=api_key)

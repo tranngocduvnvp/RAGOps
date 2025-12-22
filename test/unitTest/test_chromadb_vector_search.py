@@ -37,7 +37,7 @@ class ChromaDBVectorSearchTest(unittest.TestCase):
         gdown.download(url, data_path, quiet=False, fuzzy=True)
 
         # Build local chromadb
-        load_csv_to_chromadb(csv_path=data_path,persist_dir="./chroma_db")
+        load_csv_to_chromadb(csv_path=data_path,persist_dir="./checkpoint_model/chroma_db")
         llm = None
         cls.rag = RAG(
             type="chromadb",
@@ -46,7 +46,7 @@ class ChromaDBVectorSearchTest(unittest.TestCase):
         )
 
     def setUp(self):
-        self.persist_dir = "./chroma_db"
+        self.persist_dir = "./checkpoint_model/chroma_db"
         self.model_name = "Alibaba-NLP/gte-multilingual-base"
 
     def test_vector_search(self):

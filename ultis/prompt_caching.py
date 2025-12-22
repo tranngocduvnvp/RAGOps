@@ -41,13 +41,14 @@ class PromptCache:
         expire_seconds=3600,
         similarity_threshold=0.85,
         index_name='rag_prompt_idx',
-        vector_prefix='rag_vector:'  # Có thể giữ hoặc tùy chỉnh
+        vector_prefix='rag_vector:',
+        password=""
     ):
         self.embedding_model = embedding_instance
         self.vector_dim = len(self.embedding_model.embed_query("test"))
 
         self.redis_client = redis.StrictRedis(
-            host=redis_host, port=redis_port, db=redis_db, decode_responses=True
+            host=redis_host, port=redis_port, db=redis_db, decode_responses=True, password=password
         )
         self.expire_seconds = expire_seconds
         self.similarity_threshold = similarity_threshold
@@ -173,43 +174,6 @@ class PromptCache:
         all_keys = exact_keys + vector_keys
         if all_keys:
             self.redis_client.delete(*all_keys)
-        print("Đã xóa toàn bộ cache.")
+        print("Đã xóa toàn bộ cache")
     
 
-# ==================== CÁCH SỬ DỤNG ====================
-
-# 1. Tạo config và embedding instance (theo hệ thống của bạn)
-embedding_config = EmbeddingConfig(name="Alibaba-NLP/gte-multilingual-base")  # hoặc bất kỳ model nào bạn dùng
-my_embedding = SentenceTransformerEmbedding(config=embedding_config)
-
-# 2. Khởi tạo cache với instance embedding
-cache = PromptCache(
-    embedding_instance=my_embedding,
-    expire_seconds=86400,
-    similarity_threshold=0.82
-)
-
-# 3. Hàm query với cache
-def fake_llm(prompt):
-        return f"LLM answer for: '{prompt}'"
-
-def query_with_cache(user, prompt):
-    response, is_exact, sim = cache.get_cached_response(user, prompt)
-    if response:
-        source = "EXACT cache" if is_exact else f"SIMILAR cache (sim={sim:.3f})"
-        print(f"[HIT] {source}: {response}")
-    else:
-        print("[MISS] Gọi LLM...")
-        response = fake_llm(prompt)
-        cache.cache_response(user, prompt, response)
-        print(f"[STORED] {response}")
-    return response
-
-user = "2345"
-# Test
-query_with_cache(user, "What is Retrieval-Augmented Generation?")
-query_with_cache(user, "What is Retrieval-Augmented Generation?")  # exact hit
-query_with_cache(user, "Can you explain what RAG is in AI?")       # similar hit
-query_with_cache(user, "Tell me about transformers architecture")  # miss
-query_with_cache(user, "What is transformer achit")
-# cache.clear_all_cache()
