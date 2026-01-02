@@ -1,0 +1,27 @@
+replicaCount: 1
+
+image:
+  repository: asia-southeast1-docker.pkg.dev/ragops-481207/ragops-repo2/embedding
+  tag: "latest"  
+  pullPolicy: Always
+
+service:
+  type: ClusterIP  
+  port: 80        
+
+resources:
+  requests:
+    cpu: "200m"       
+    memory: "2Gi"  
+  limits:
+    cpu: "1"
+    memory: "16Gi"  
+
+env:
+  - name: EMBEDDING_MODEL
+    value: "Alibaba-NLP/gte-multilingual-base"
+  - name: DEVICE
+    value: "cpu"   
+
+ingress:
+  enabled: false

@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: {{include "my-app.name" .}}
+    labels:
+        app: {{include "my-app.fullname" .}}
+spec:
+    replicas: {{.Values.replicaCount}}
+    selector:
+        matchLabels:
+            app: {{include "my-app.name" .}}
+    template:
+        metadata:
+            labels:
+                app: {{include "my-app.name" .}}
+        spec:
+            volumes:
+                - name: checkpoint-storage
+                  persistentVolumeClaim:
+                    claimName: {{ include "my-app.fullname" . }}-checkpoint-pvc
+            containers:
+                - name: {{ include "my-app.name" . }}
+                  image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+                  imagePullPolicy: {{ .Values.image.pullPolicy }}
+                  ports:
+                    - containerPort: {{ .Values.service.targetPort }}
+                  resources:
+                    requests:
+                      cpu: {{ .Values.resources.requests.cpu }}
+                      memory: {{ .Values.resources.requests.memory }}
+                    limits:
+                      cpu: {{ .Values.resources.limits.cpu }}
+                      memory: {{ .Values.resources.limits.memory }}
+                  volumeMounts:
+                    - name: checkpoint-storage
+                      mountPath: /app/checkpoint_model
+                      subPath: ""
+                  envFrom:
+                    - secretRef:
+                        name: ragapp-secret
+                    

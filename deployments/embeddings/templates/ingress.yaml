@@ -1,0 +1,19 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: embedding-ingress
+  annotations:
+    kubernetes.io/ingress.class: "nginx"  
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: embedding.ragops.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ .Release.Name }}-embedding-service
+            port:
+              number: 80

@@ -1,0 +1,176 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: log-config
+  namespace: {{ .Release.Namespace }}
+data:
+  log_config.yaml: |-
+      version: 1
+      disable_existing_loggers: False
+      formatters:
+        default:
+          "()": uvicorn.logging.DefaultFormatter
+          format: '%(levelprefix)s [%(asctime)s] %(message)s'
+          use_colors: null
+          datefmt: '%d-%m-%Y %H:%M:%S'
+        access:
+          "()": uvicorn.logging.AccessFormatter
+          format: '%(levelprefix)s [%(asctime)s] %(client_addr)s - "%(request_line)s" %(status_code)s'
+          datefmt: '%d-%m-%Y %H:%M:%S'
+      handlers:
+        default:
+          formatter: default
+          class: logging.StreamHandler
+          stream: ext://sys.stderr
+        access:
+          formatter: access
+          class: logging.StreamHandler
+          stream: ext://sys.stdout
+        console:
+          class: logging.StreamHandler
+          stream: ext://sys.stdout
+          formatter: default
+      loggers:
+        root:
+          level: {{ .Values.chromadb.logging.root | upper | default "WARN" }}
+          handlers: [console]
+        chromadb:
+          level: {{ .Values.chromadb.logging.chromadb | upper | default "DEBUG" }}
+        uvicorn:
+          level: {{ .Values.chromadb.logging.uvicorn | upper | default "INFO" }}
+---
+{{- if and .Values.chromadb.auth.enabled (eq .Values.chromadb.auth.type "token") (eq .Values.chromadb.auth.existingSecret "") }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: chromadb-auth
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": "pre-install,pre-upgrade"
+    "helm.sh/hook-weight": "-5"
+type: Opaque
+{{- if (lookup "v1" "Secret" .Release.Namespace "chromadb-auth") }}
+immutable: true
+{{- end }}
+data:
+  {{- $existingSecret := (lookup "v1" "Secret" .Release.Namespace "chromadb-auth") }}
+  {{- if $existingSecret }}
+  token: {{ index $existingSecret.data "token" }}
+  {{- else }}
+  token: {{ .Values.chromadb.auth.token.value | default ( randAlphaNum 32 ) | b64enc | quote }}
+  {{- end }}
+{{- end }}
+---
+{{- if and (semverCompare ">= 0.4.7" (include "chromadb.apiVersion" .)) .Values.chromadb.auth.enabled (eq .Values.chromadb.auth.type "basic") (eq .Values.chromadb.auth.existingSecret "") }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: chromadb-auth
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": "pre-install,pre-upgrade"
+    "helm.sh/hook-weight": "-5"
+type: Opaque
+{{- $existingSecret := (lookup "v1" "Secret" .Release.Namespace "chromadb-auth") }}
+{{- if $existingSecret }}
+immutable: true
+{{- end }}
+data:
+  {{- if $existingSecret }}
+  username: {{ index $existingSecret.data "username" }}
+  password: {{ index $existingSecret.data "password" }}
+  {{- else }}
+  username: {{ .Values.chromadb.auth.basic.username | b64enc | quote }}
+  password: {{ .Values.chromadb.auth.basic.password | default (randAlphaNum 16) | b64enc | quote }}
+  {{- end }}
+{{- end }}
+---
+{{- if and .Values.chromadb.auth.enabled (eq .Values.chromadb.auth.type "basic") }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "chart.fullname" . }}-basic-auth-config
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": "pre-install,pre-upgrade"
+    "helm.sh/hook-weight": "-5"
+data:
+  {{- $existingConfigMap := (lookup "v1" "ConfigMap" .Release.Namespace (include "chart.fullname" . | printf "%s-basic-auth-config")) }}
+  {{- $newData := dict }}
+  {{- if and (semverCompare ">= 0.4.7" (include "chromadb.apiVersion" .)) (semverCompare "< 0.5.0" (include "chromadb.apiVersion" .)) }}
+  {{- $_ := set $newData "CHROMA_SERVER_AUTH_CREDENTIALS_PROVIDER" "chromadb.auth.providers.HtpasswdFileServerAuthCredentialsProvider" }}
+  {{- $_ := set $newData "CHROMA_SERVER_AUTH_PROVIDER" "chromadb.auth.basic.BasicAuthServerProvider" }}
+  {{- $_ := set $newData "CHROMA_SERVER_AUTH_CREDENTIALS_FILE" "/chroma/auth/server.htpasswd" }}
+  {{- else if (semverCompare ">= 0.5.0" (include "chromadb.apiVersion" .)) }}
+  {{- $_ := set $newData "CHROMA_SERVER_AUTHN_CREDENTIALS_FILE" "/chroma/auth/server.htpasswd" }}
+  {{- $_ := set $newData "CHROMA_SERVER_AUTHN_PROVIDER" "chromadb.auth.basic_authn.BasicAuthenticationServerProvider" }}
+  {{- end }}
+  {{- if $existingConfigMap }}
+  {{- range $key, $value := $existingConfigMap.data }}
+  {{- if not (hasKey $newData $key) }}
+  {{- $_ := set $newData $key $value }}
+  {{- end }}
+  {{- end }}
+  {{- end }}
+  {{- range $key, $value := $newData }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+{{- end }}
+---
+{{- if and .Values.chromadb.auth.enabled (eq .Values.chromadb.auth.type "token") }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "chart.fullname" . }}-token-auth-config
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": "pre-install,pre-upgrade"
+    "helm.sh/hook-weight": "-5"
+data:
+  {{- $existingConfigMap := (lookup "v1" "ConfigMap" .Release.Namespace (include "chart.fullname" . | printf "%s-token-auth-config")) }}
+  {{- $newData := dict }}
+  {{- if and (semverCompare ">= 0.4.7" (include "chromadb.apiVersion" .)) (semverCompare "< 0.5.0" (include "chromadb.apiVersion" .)) }}
+  {{- $_ := set $newData "CHROMA_SERVER_AUTH_CREDENTIALS_PROVIDER" "chromadb.auth.token.TokenConfigServerAuthCredentialsProvider" }}
+  {{- $_ := set $newData "CHROMA_SERVER_AUTH_PROVIDER" "chromadb.auth.token.TokenAuthServerProvider" }}
+  {{- else if (semverCompare ">= 0.5.0" (include "chromadb.apiVersion" .)) }}
+  {{- $_ := set $newData "CHROMA_SERVER_AUTHN_PROVIDER" "chromadb.auth.token_authn.TokenAuthenticationServerProvider" }}
+  {{- $_ := set $newData "CHROMA_AUTH_TOKEN_TRANSPORT_HEADER" (include "chromadb.auth.token.headerType" .) }}
+  {{- end }}
+  {{- if $existingConfigMap }}
+  {{- range $key, $value := $existingConfigMap.data }}
+  {{- if not (hasKey $newData $key) }}
+  {{- $_ := set $newData $key $value }}
+  {{- end }}
+  {{- end }}
+  {{- end }}
+  {{- range $key, $value := $newData }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+{{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: v1-config
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": "pre-install,pre-upgrade"
+    "helm.sh/hook-weight": "-5"
+data:
+  config.yaml: |-
+    {{- if .Values.chromadb.telemetry.enabled }}
+    open_telemetry:
+      service_name: {{ .Values.chromadb.telemetry.serviceName }}
+      endpoint: {{ .Values.chromadb.telemetry.endpoint }}
+    {{- end }}
+    port: {{ .Values.chromadb.serverHttpPort }}
+    listen_address: {{ .Values.chromadb.serverHost }}
+    max_payload_size_bytes: {{ .Values.chromadb.maxPayloadSizeBytes | int64 }}
+    {{- if .Values.chromadb.corsAllowOrigins }}
+      {{- if and (eq (len .Values.chromadb.corsAllowOrigins) 1) (eq (index .Values.chromadb.corsAllowOrigins 0) "*") }}
+      {{ fail "cors_allow_origins must not be set to '*' when only one origin is allowed" }}
+      {{- end }}
+    cors_allow_origins: {{ .Values.chromadb.corsAllowOrigins | toJson }}
+    {{- end }}
+    persist_path: {{ .Values.chromadb.persistDirectory }}
+    allow_reset: {{ .Values.chromadb.allowReset }}

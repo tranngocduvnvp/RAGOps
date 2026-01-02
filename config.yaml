@@ -1,0 +1,14 @@
+mode: "online"              # online | offline
+model_name: "gemini"
+model_engine: "huggingface"
+model_version: "gemini-2.5-flash"
+
+db: "chromadb"               # qdrant | mongodb | chromadb
+embedding_model: "Alibaba-NLP/gte-multilingual-base"
+reranker: "Alibaba-NLP/gte-multilingual-reranker-base"
+
+faiss_base_path: ./faiss_indexes
+max_short_term_messages: 8
+
+expire_seconds: 86400
+similarity_threshold: 0.82

@@ -1,0 +1,92 @@
+logstashPipeline:
+  logstash.conf: |
+    input {
+        beats {
+            port => "5044"
+      }
+    }
+    filter {
+        grok {
+            add_field => [ "received_at", "%{@timestamp}" ]
+        }
+    }
+    output {
+    if "myopensource" in [tags] {
+       elasticsearch {
+         hosts => [ "https://elasticsearch-master:9200" ]
+         user => "elastic"
+         password => "${ELASTIC_PASSWORD}"
+         cacert => "/usr/share/logstash/config/certs/ca.crt"
+         index => "logstash_myopensource_%{+YYYY.MM.dd}"
+         }
+       }
+       else if "myservice" in [tags] {
+       elasticsearch {
+         hosts => [ "elasticsearch-master:9200" ]
+         hosts => [ "https://elasticsearch-master:9200" ]
+         user => "elastic"
+         password => "${ELASTIC_PASSWORD}"
+         cacert => "/usr/share/logstash/config/certs/ca.crt"
+         index => "logstash_myservice_%{+YYYY.MM.dd}"
+         }
+       }
+       else {
+       elasticsearch {
+         hosts => [ "elasticsearch-master:9200" ]
+         hosts => [ "https://elasticsearch-master:9200" ]
+         user => "elastic"
+         password => "${ELASTIC_PASSWORD}"
+         cacert => "/usr/share/logstash/config/certs/ca.crt"
+         index => "logstash_default_%{+YYYY.MM.dd}"
+         }
+       }
+    }
+
+extraEnvs:
+  - name: ELASTIC_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: elasticsearch-master-credentials
+        key: password
+
+secretMounts:
+  - name: elasticsearch-master-certs
+    secretName: elasticsearch-master-certs
+    path: /usr/share/logstash/config/certs
+
+# ingress:
+#   enabled: true
+#   className: "nginx"
+#   pathtype: ImplementationSpecific
+#   hosts:
+#     - host: logstash.ragops.com
+#       paths:
+#         - path: /beats
+#           servicePort: 5044
+#         - path: /http
+#           servicePort: 8080
+
+antiAffinity: "soft"
+
+
+service:
+  # annotations: {}
+  type: ClusterIP
+  # loadBalancerIP: ""
+  ports:
+    - name: beats
+      port: 5044
+      protocol: TCP
+      targetPort: 5044
+    - name: http
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+
+resources:
+  requests:
+    cpu: "100m"
+    memory: "400Mi"
+  limits:
+    cpu: "1000m"
+    memory: "1536Mi"

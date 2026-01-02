@@ -1,0 +1,220 @@
+grafana:
+  enabled: true
+  namespaceOverride: ""
+
+  ## ForceDeployDatasources Create datasource configmap even if grafana deployment has been disabled
+  ##
+  forceDeployDatasources: false
+
+  ## ForceDeployDashboard Create dashboard configmap even if grafana deployment has been disabled
+  ##
+  forceDeployDashboards: false
+
+  ## Deploy default dashboards
+  ##
+  defaultDashboardsEnabled: true
+
+  ## Deploy GrafanaDashboard CRDs that reference dashboards from ConfigMaps when grafana-operator is used
+  ## These settings control how dashboards are integrated with the Grafana Operator
+  ## Note: End user still need to create is own kind: GrafanaDataSource for Prometheus
+  ## eg:
+  ## apiVersion: grafana.integreatly.org/v1beta1
+  ## kind: GrafanaDatasource
+  ## metadata:
+  ##   name: prometheus
+  ##   annotations: {}
+  ## spec:
+  ##   allowCrossNamespaceImport: true
+  ##   instanceSelector:
+  ##     matchLabels:
+  ##       app: grafana
+  ##   datasource:
+  ##     name: prometheus
+  ##     type: prometheus
+  ##     access: proxy
+  ##     url: http://prometheus-operated.prometheus-stack.svc.cluster.local:9090
+  ##     isDefault: true
+  ##     jsonData:
+  ##       "tlsSkipVerify": true
+  ##       "timeInterval": "5s"
+  ##
+  operator:
+    ## Enable references to ConfigMaps containing dashboards in GrafanaDashboard CRs
+    ## Set to true to allow dashboards to be loaded from ConfigMap references
+    dashboardsConfigMapRefEnabled: false
+
+    ## Annotations for GrafanaDashboard Cr
+    ##
+    annotations: {}
+    ## Labels that should be matched kind: Grafana instance
+    ## Example: { app: grafana, category: dashboard }
+    ##
+    matchLabels: {}
+
+    ## How frequently the operator should resync resources (in duration format)
+    ## Controls how often dashboards are reconciled by the operator
+    ##
+    resyncPeriod: 10m
+
+    ## Which folder all ddashboard in Grafana General means on Root level
+    ##
+    folder: General
+
+  ## Timezone for the default dashboards
+  ## Other options are: browser or a specific timezone, i.e. Europe/Luxembourg
+  ##
+  defaultDashboardsTimezone: utc
+
+  ## Editable flag for the default dashboards
+  ##
+  defaultDashboardsEditable: true
+
+  ## Default interval for Grafana dashboards
+  ##
+  defaultDashboardsInterval: 1m
+
+  # Administrator credentials when not using an existing secret (see below)
+  adminUser: admin
+  adminPassword: strongpassword
+
+  # Use an existing secret for the admin user.
+  admin:
+    ## Name of the secret. Can be templated.
+    existingSecret: ""
+    userKey: admin-user
+    passwordKey: admin-password
+
+  rbac:
+    ## If true, Grafana PSPs will be created
+    ##
+    pspEnabled: false
+
+  ingress:
+    ## If true, Grafana Ingress will be created
+    ##
+    enabled: true
+
+    ## IngressClassName for Grafana Ingress.
+    ## Should be provided if Ingress is enable.
+    ##
+    ingressClassName: nginx
+
+    ## Annotations for Grafana Ingress
+    ##
+    annotations: {}
+      # kubernetes.io/ingress.class: nginx
+      # kubernetes.io/tls-acme: "true"
+
+    ## Labels to be added to the Ingress
+    ##
+    labels: {}
+
+    ## Hostnames.
+    ## Must be provided if Ingress is enable.
+    ##
+    hosts:
+      - grafana.ragops.com
+
+    ## Path for grafana ingress
+    path: /
+
+    ## TLS configuration for grafana Ingress
+    ## Secret must be manually created in the namespace
+    ##
+    tls: []
+    # - secretName: grafana-general-tls
+    #   hosts:
+    #   - grafana.example.com
+
+  # # To make Grafana persistent (Using Statefulset)
+  # #
+  # persistence:
+  #   enabled: true
+  #   type: sts
+  #   storageClassName: "storageClassName"
+  #   accessModes:
+  #     - ReadWriteOnce
+  #   size: 20Gi
+  #   finalizers:
+  #     - kubernetes.io/pvc-protection
+
+  serviceAccount:
+    create: true
+    autoMount: true
+
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      # Allow discovery in all namespaces for dashboards
+      searchNamespace: ALL
+
+      # Support for new table panels, when enabled grafana auto migrates the old table panels to newer table panels
+      enableNewTablePanelSyntax: false
+
+      ## Annotations for Grafana dashboard configmaps
+      ##
+      annotations: {}
+      multicluster:
+        global:
+          enabled: false
+        etcd:
+          enabled: false
+      provider:
+        allowUiUpdates: false
+    datasources:
+      enabled: true
+      defaultDatasourceEnabled: true
+      isDefaultDatasource: true
+
+      name: Prometheus
+      uid: prometheus
+
+      ## Extra jsonData properties to add to the datasource
+      # extraJsonData:
+      #  prometheusType: Prometheus
+
+      ## URL of prometheus datasource
+      ##
+      # url: http://prometheus-stack-prometheus:9090/
+
+      ## Prometheus request timeout in seconds
+      # timeout: 30
+
+      ## Query parameters to add, as a URL-encoded string,
+      ## to query Prometheus
+      # customQueryParameters: ""
+
+      # If not defined, will use prometheus.prometheusSpec.scrapeInterval or its default
+      # defaultDatasourceScrapeInterval: 15s
+
+      ## Annotations for Grafana datasource configmaps
+      ##
+      annotations: {}
+
+      ## Set method for HTTP to send query to datasource
+      httpMethod: POST
+
+      ## Create datasource for each Pod of Prometheus StatefulSet;
+      ## this uses by default the headless service `prometheus-operated` which is
+      ## created by Prometheus Operator. In case you deployed your own Service for your
+      ## Prometheus instance, you can specify it with the field `prometheusServiceName`
+      ## ref: https://github.com/prometheus-operator/prometheus-operator/blob/0fee93e12dc7c2ea1218f19ae25ec6b893460590/pkg/prometheus/statefulset.go#L255-L286
+      createPrometheusReplicasDatasources: false
+      prometheusServiceName: prometheus-operated
+      label: grafana_datasource
+      labelValue: "1"
+
+      ## Field with internal link pointing to existing data source in Grafana.
+      ## Can be provisioned via additionalDataSources
+      exemplarTraceIdDestinations: {}
+        # datasourceUid: Jaeger
+        # traceIdLabelName: trace_id
+        # urlDisplayLabel: View traces
+      alertmanager:
+        enabled: true
+        name: Alertmanager
+        uid: alertmanager
+        handleGrafanaManagedAlerts: false
+        implementation: prometheus

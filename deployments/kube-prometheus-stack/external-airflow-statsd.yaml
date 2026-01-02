@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: airflow-statsd-exporter
+  namespace: monitoring
+subsets:
+  - addresses:
+      - ip: 34.87.162.32
+    ports:
+      - port: 9102
+        name: metrics
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: airflow-statsd-exporter
+  namespace: monitoring
+  labels:
+    app: airflow-statsd-exporter   
+spec:
+  type: ClusterIP
+  ports:
+    - port: 9102
+      targetPort: 9102
+      protocol: TCP
+      name: metrics
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: airflow-statsd-monitor
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack   
+spec:
+  selector:
+    matchLabels:
+      app: airflow-statsd-exporter
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scheme: http
+      relabelings:   
+        - sourceLabels: [__address__]
+          targetLabel: __address__
+          replacement: 34.87.162.32:9102  
+        - sourceLabels: [__meta_kubernetes_service_name]
+          targetLabel: instance
+          replacement: airflow-vm-statsd
+        - targetLabel: job
+          replacement: airflow-statsd-exporter

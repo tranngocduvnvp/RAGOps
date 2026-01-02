@@ -1,0 +1,37 @@
+apiVersion: skaffold/v4beta10
+kind: Config
+
+metadata:
+  name: ragops-fastapi-app
+
+build:
+  artifacts:
+    - image: asia-southeast1-docker.pkg.dev/ragops-481207/ragops-repo2/ragops  # ĐÃ SỬA: Bỏ :latest
+      context: .
+      docker:
+        dockerfile: Dockerfile
+      sync:
+        manual:
+          - src: '**/*.py'
+            dest: /app
+          - src: 'requirements.txt'
+            dest: /app
+
+  tagPolicy:
+    sha256: {}  # Giữ nguyên, Skaffold sẽ tự tag với :latest + digest cho remote cluster như GKE
+
+deploy:
+  helm:
+    releases:
+      - name: ragops
+        chartPath: deployments/ragapp
+        namespace: serving
+        createNamespace: true
+        wait: true
+        skipBuildDependencies: true
+        upgradeOnChange: true
+        setValueTemplates:
+          image.repository: "{{.IMAGE_REPO}}"
+          image.tag: "{{.IMAGE_TAG}}"
+        setValues:
+          image.pullPolicy: IfNotPresent

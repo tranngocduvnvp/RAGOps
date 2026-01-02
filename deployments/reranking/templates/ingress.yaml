@@ -1,0 +1,19 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: rerank-ingress
+  annotations:
+    kubernetes.io/ingress.class: "nginx"  
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: rerank.ragops.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ .Release.Name }}-rerank-service
+            port:
+              number: 80

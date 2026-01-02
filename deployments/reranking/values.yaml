@@ -1,0 +1,27 @@
+replicaCount: 1
+
+image:
+  repository: tranngocduhust1234/rerank
+  tag: "latest"  
+  pullPolicy: Always
+
+service:
+  type: ClusterIP  
+  port: 80        
+
+resources:
+  requests:
+    cpu: "200m"      
+    memory: "2Gi" 
+  limits:
+    cpu: "1"
+    memory: "16Gi"  
+
+env:
+  - name: RERANK_MODEL
+    value: "cross-encoder/ms-marco-MiniLM-L12-v2"
+  - name: DEVICE
+    value: "cpu"   
+
+ingress:
+  enabled: false

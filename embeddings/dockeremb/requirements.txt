@@ -1,0 +1,6 @@
+transformers
+loguru
+sentence_transformers
+fastapi
+uvicorn
+bentoml

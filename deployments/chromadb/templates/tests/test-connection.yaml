@@ -1,0 +1,40 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "{{ include "chart.fullname" . }}-test-connection"
+  labels:
+    {{- include "chart.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  ttlSecondsAfterFinished: 100
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: curl
+          image: curlimages/curl:latest
+          command: ['curl']
+          args:
+            - '-v'
+            - 'http://{{ include "chart.fullname" . }}:{{ .Values.chromadb.serverHttpPort }}/api/v1/hearbeat'
+            {{- if eq .Values.chromadb.auth.type "token" }}
+            {{- $existingConfigMap := (lookup "v1" "ConfigMap" .Release.Namespace (include "chart.fullname" . | printf "%s-token-auth-config")) }}
+            {{- $existingSecret := (lookup "v1" "Secret" .Release.Namespace (.Values.chromadb.auth.existingSecret | default "chromadb-auth")) }} # TODO support existing secret
+            {{- if $existingSecret }}
+            - '-H'
+            {{- if eq $existingConfigMap.data.CHROMA_AUTH_TOKEN_TRANSPORT_HEADER "Authorization" }} # Authorization: Bearer
+            - '{{ $existingConfigMap.data.CHROMA_AUTH_TOKEN_TRANSPORT_HEADER }}: Bearer {{ $existingSecret.data.token | b64dec }}1'
+            {{- else }} # X-Chroma-Token
+            - '{{ $existingConfigMap.data.CHROMA_AUTH_TOKEN_TRANSPORT_HEADER }}: {{ $existingSecret.data.token | b64dec }}'
+            {{- end }}
+            {{- end }}
+            {{- else if eq .Values.chromadb.auth.type "basic" }}
+            {{- $existingSecret := (lookup "v1" "Secret" .Release.Namespace (.Values.chromadb.auth.existingSecret | default "chromadb-auth")) }} # TODO support existing secret
+            {{- if $existingSecret }}
+            - '--user'
+            - "{{ $existingSecret.data.username }}:{{ $existingSecret.data.password }}"
+            {{- end }}
+            {{- end }}
+ 

@@ -1,0 +1,31 @@
+mode: deployment  
+
+image:
+  repository: otel/opentelemetry-collector-k8s  
+  tag: ""  
+
+
+config:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317  
+        http:
+          endpoint: 0.0.0.0:4318
+
+  processors:
+    batch: {}
+
+  exporters:
+    otlp/tempo:
+      endpoint: temp-tempo.monitoring.svc.cluster.local:4317  # Forward to Tempo
+      tls:
+        insecure: true  
+
+  service:
+    pipelines:
+      traces:
+        receivers: [otlp]
+        processors: [batch]
+        exporters: [otlp/tempo]

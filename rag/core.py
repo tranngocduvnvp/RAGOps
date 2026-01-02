@@ -1,0 +1,198 @@
+import pymongo
+import google.generativeai as genai
+from IPython.display import Markdown
+import textwrap
+from embeddings import SentenceTransformerEmbedding, EmbeddingConfig, CustomSentenceTransformerEmbeddings
+from typing import Optional, Literal
+from qdrant_client import QdrantClient, models
+from qdrant_client.http.models import Distance, VectorParams
+from qdrant_client import models, QdrantClient
+import chromadb
+from chromadb.config import Settings
+
+class RAG():
+    def __init__(self, 
+            llm,
+            type: Literal['chromadb','mongodb', 'qdrant'],
+            mongodbUri: Optional[str] = None,
+            qdrant_api: Optional[str] = None,
+            qdrant_url: Optional[str] = None,
+            dbName: Optional[str] = None,
+            dbCollection: Optional[str] = "rag_collection",
+            embeddingName: str ='Alibaba-NLP/gte-multilingual-base',
+            emb=None
+        ):
+        self.type = type
+        if self.type == 'mongodb':
+            self.client = pymongo.MongoClient(mongodbUri)
+            self.db = self.client[dbName] 
+            self.collection = self.db[dbCollection]
+        elif self.type == 'qdrant':
+            self.qdrant_api = qdrant_api
+            self.qdrant_url = qdrant_url
+            self.qdrant_collection = embeddingName.split('/')[-1]
+            self.client = QdrantClient(
+                            url=self.qdrant_url,
+                            api_key=self.qdrant_api
+                            )
+        else:
+            self.type = 'chromadb'
+            # self.client = chromadb.PersistentClient(path="./checkpoint_model/chroma_db")
+            # self.chromadb_collection_name = embeddingName.split('/')[-1] 
+            # if self._collection_exists:
+            #     self.chromadb_collection = self.client.get_collection(name=self.chromadb_collection_name)
+
+            self.client = chromadb.HttpClient(
+                host="chromadb",      
+                port=8000,                   
+                ssl=False,                  
+                settings=Settings(
+                    allow_reset=False,
+                    anonymized_telemetry=False,
+                    # tenant="default_tenant",
+                    # database="default_database"
+                )
+            )
+            self.chromadb_collection_name = dbCollection
+            
+            try:
+                self.chromadb_collection = self.client.get_collection(name=self.chromadb_collection_name)
+                print(f"Successfully connected to the collection: {self.chromadb_collection_name}")
+                print(f"Current number of vectors: {self.chromadb_collection.count()}")
+            except Exception as e:
+                raise ValueError(f"Collection '{self.chromadb_collection_name}' không tồn tại trên ChromaDB server. Chi tiết: {e}")
+
+
+
+        if emb == None:
+            # self.embedding_model = SentenceTransformerEmbedding(
+            #     EmbeddingConfig(name=embeddingName)
+            # )
+            self.embedding_model = CustomSentenceTransformerEmbeddings(base_url="http://embeddings-embedding-service:80")
+        else:
+            self.embedding_model = emb
+        self.llm = llm
+
+    def get_embedding(self, text):
+        if not text.strip():
+            return []
+
+        embedding = self.embedding_model.encode(text)
+        return embedding.tolist()
+
+    def _collection_exists(self):           
+        """
+        Check if collection is exists (For qdrant or chromadb)
+        """
+        if self.type == "qdrant":
+            try:
+                collections = self.client.get_collections().collections
+                collection_names = [col.name for col in collections]
+                return self.qdrant_collection in collection_names
+            except Exception as e:
+                return False
+        else:
+            try:
+                self.client.get_collection(name=self.chromadb_collection_name)
+                return True
+            except ValueError:
+                return False
+    def vector_search(
+            self, 
+            user_query: str, 
+            limit=4):
+        """
+        Perform a vector search in the MongoDB collection or Qdrant collection based on the user query.
+
+        Args:
+        user_query (str): The user's query string.
+
+        Returns:
+        list: A list of matching documents.
+        """
+
+        # Generate embedding for the user query
+        query_embedding = self.get_embedding(user_query)
+
+        if query_embedding is None:
+            return "Invalid query or embedding generation failed."
+
+        # Define the vector search pipeline
+        if self.type == 'qdrant':
+            if self._collection_exists:
+                hits = self.client.search(
+                    collection_name=self.qdrant_collection,
+                    query_vector=self.embedding_model.encode(user_query).tolist(),
+                    limit=limit
+                )               
+                results = []
+                for hit in hits:
+                    results.append({'_id': hit.payload['_id'], 'combined_information': hit.payload['combined_information'], 'score': hit.score})
+                return results
+            else: 
+                print(f"Collection {self.qdrant_collection} does not exist")
+                return
+        elif self.type == 'mongodb':
+            vector_search_stage = {
+                "$vectorSearch": {
+                    "index": "vector_index",
+                    "queryVector": query_embedding,
+                    "path": "embedding",
+                    "numCandidates": 400,
+                    "limit": limit,
+                }
+            }
+
+            unset_stage = {
+                "$unset": "embedding" 
+            }
+
+            project_stage = {
+                "$project": {
+                    "_id": 1,  
+                    "title": 1, 
+                    # "product_specs": 1,
+                    "color_options": 1,
+                    "current_price": 1,
+                    "product_promotion": 1,
+                    "score": {
+                        "$meta": "vectorSearchScore"
+                    }
+                }
+            }
+
+            pipeline = [vector_search_stage, unset_stage, project_stage]
+
+            # Execute the search
+            results = self.collection.aggregate(pipeline)
+    
+            return list(results)
+
+        else:
+            query_vector = self.embedding_model.encode(user_query).tolist()
+    
+            hits = self.chromadb_collection.query(
+                query_embeddings=[query_vector],
+                n_results=limit
+            )
+                
+            results = []
+            for i in range(len(hits['ids'][0])):
+                distance = hits['distances'][0][i]
+                simlarity = 1 - distance 
+
+                result = {
+                    "_id": hits['ids'][0][i],
+                    "combined_information": hits['documents'][0][i],
+                    "score": simlarity,
+                    "metatdata": hits["metadatas"][0][i]
+                }
+                results.append(result)
+            return results
+
+    def generate_content(self, prompt):
+        return self.llm.generate_content(prompt)
+
+    def _to_markdown(text):
+        text = text.replace('•', '  *')
+        return Markdown(textwrap.indent(text, '> ', predicate=lambda _: True))

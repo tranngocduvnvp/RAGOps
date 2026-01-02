@@ -1,0 +1,25 @@
+tempo:
+  searchEnabled: true  # Enable search traces in Grafana
+  metricsGenerator:
+    enabled: false    
+
+  storage:
+    trace:
+      backend: gcs       # Backend GCS
+      gcs:
+        bucket_name: tempo-traces-bucket-grafana  
+
+serviceAccount:
+  create: true
+  name: tempo
+  annotations:
+    iam.gke.io/gcp-service-account: tempo-sa@ragops-481207.iam.gserviceaccount.com  
+
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 1Gi
+  requests:
+    cpu: 100m
+    memory: 512Mi

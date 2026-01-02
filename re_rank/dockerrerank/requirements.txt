@@ -1,0 +1,4 @@
+transformers
+loguru
+sentence_transformers
+bentoml
